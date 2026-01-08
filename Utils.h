@@ -3,75 +3,49 @@
 
 #include "Globals.h"
 
-// Definisi Variabel Buzzer (Definisi fisik ada di .ino, ini deklarasi untuk Utils)
-int buzzerState = 0;
-int buzzerStep = 0;
-unsigned long buzzerTimer = 0;
-unsigned long uiTimer = 0;
-bool uiOverride = false;
-
-// --- LOGIKA BUZZER NON-BLOCKING ---
-void handleBuzzerLoop()
-{
+void handleBuzzerLoop() {
     unsigned long now = millis();
-    if (buzzerState == 0)
-        return;
+    if (buzzerState == 0) return;
 
     // Beep Pendek (Normal)
-    if (buzzerState == 1)
-    {
-        if (buzzerStep == 0)
-        {
+    if (buzzerState == 1) {
+        if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 1;
-        }
-        else if (buzzerStep == 1 && now - buzzerTimer > 100)
-        {
+        } else if (buzzerStep == 1 && now - buzzerTimer > 100) {
             digitalWrite(BUZZER_PIN, LOW);
             buzzerState = 0; // Selesai
             buzzerStep = 0;
         }
     }
     // Beep Sukses (2x pendek cepat)
-    else if (buzzerState == 2)
-    {
-        if (buzzerStep == 0)
-        {
+    else if (buzzerState == 2) {
+        if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 1;
-        }
-        else if (buzzerStep == 1 && now - buzzerTimer > 80)
-        {
+        } else if (buzzerStep == 1 && now - buzzerTimer > 80) {
             digitalWrite(BUZZER_PIN, LOW);
             buzzerTimer = now;
             buzzerStep = 2;
-        }
-        else if (buzzerStep == 2 && now - buzzerTimer > 50)
-        {
+        } else if (buzzerStep == 2 && now - buzzerTimer > 50) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 3;
-        }
-        else if (buzzerStep == 3 && now - buzzerTimer > 80)
-        {
+        } else if (buzzerStep == 3 && now - buzzerTimer > 80) {
             digitalWrite(BUZZER_PIN, LOW);
             buzzerState = 0;
             buzzerStep = 0;
         }
     }
     // Beep Gagal (Panjang)
-    else if (buzzerState == 3)
-    {
-        if (buzzerStep == 0)
-        {
+    else if (buzzerState == 3) {
+        if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 1;
-        }
-        else if (buzzerStep == 1 && now - buzzerTimer > 800)
-        { // 800ms
+        } else if (buzzerStep == 1 && now - buzzerTimer > 800) { // 800ms
             digitalWrite(BUZZER_PIN, LOW);
             buzzerState = 0;
             buzzerStep = 0;
@@ -79,19 +53,15 @@ void handleBuzzerLoop()
     }
 }
 
-// Fungsi Pemicu (Trigger) - Tidak ada delay di sini!
-void bunyiBuzzer()
-{
-    buzzerState = 1;
-    buzzerStep = 0;
+// Fungsi Pemicu (Trigger)
+void bunyiBuzzer() {
+    buzzerState = 1; buzzerStep = 0;
 }
 void bunyiBuzzerSukses() {
-    buzzerState = 2;
-    buzzerStep = 0;
+    buzzerState = 2; buzzerStep = 0;
 }
 void bunyiBuzzerGagal() {
-    buzzerState = 3;
-    buzzerStep = 0;
+    buzzerState = 3; buzzerStep = 0;
 }
 // ------------------------------------
 
@@ -112,6 +82,8 @@ String readUID() {
 
 String getTimestamp() {
     time_t now = time(nullptr);
+    
+    // Kirim waktu apa adanya (sesuai request)
     struct tm* timeinfo = localtime(&now);
     char timestamp[25];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", timeinfo);
@@ -137,9 +109,8 @@ void cleanupMemory() {
     }
 }
 
-// Helper untuk set UI sementara (pengganti delay di loop)
-void setTemporaryMessage(String l1, String l2, int duration)
-{
+// Helper untuk set UI sementara
+void setTemporaryMessage(String l1, String l2, int duration) {
     showLcd(l1, l2);
     uiOverride = true;
     uiTimer = millis() + duration;

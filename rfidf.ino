@@ -6,7 +6,9 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-// URUTAN INCLUDE SANGAT PENTING
+// =========================================
+// URUTAN INCLUDE (JANGAN DIUBAH)
+// =========================================
 #include "Settings.h"
 #include "LCD.h"
 #include "Globals.h"
@@ -52,9 +54,17 @@ String apiNamaKelas = "-";
 std::list<OfflineData*> offlineQueue;
 std::list<CardHistory*> tapHistory;
 
-// Variabel Non-Blocking UI (Didefinisikan di sini agar memori teralokasi)
+// =========================================
+// VARIABEL NON-BLOCKING (FIX LINKER ERROR)
+// =========================================
+// Variabel UI
 unsigned long uiTimer = 0;
 bool uiOverride = false;
+
+// Variabel Buzzer (Ini yang sebelumnya kurang)
+int buzzerState = 0;
+int buzzerStep = 0;
+unsigned long buzzerTimer = 0;
 
 // =========================================
 // SETUP
@@ -85,7 +95,8 @@ void setup() {
     
     if (!wm.autoConnect(ap_ssid, ap_password)) {
         showLcd("WiFi Failed", "Restarting...");
-        delay(2000); // Delay di setup aman karena loop belum jalan
+        // Delay di setup aman karena loop belum jalan
+        delay(2000); 
         ESP.restart();
     }
 
@@ -110,10 +121,10 @@ void setup() {
 // LOOP UTAMA (NON-BLOCKING)
 // =========================================
 void loop() {
-    // 1. Core Handlers (Wajib jalan terus)
+    // 1. Core Handlers (Wajib jalan terus agar responsif)
     MDNS.update();
-    server.handleClient(); // Webserver responsif setiap saat
-    handleBuzzerLoop();    // Bunyi beep diproses per milidetik
+    server.handleClient(); // Webserver handle request
+    handleBuzzerLoop();    // Buzzer handle bunyi tanpa delay
 
     // 2. WiFi Management
     handleWiFiConnection(millis());
@@ -176,7 +187,6 @@ void loop() {
     // --- Register Mode ---
     if (currentMode == MODE_REGISTER) {
         // Fungsi registerCard ada di API.h
-        // Pastikan API.h tidak pakai delay() panjang jika ingin webserver tetap responsif 100%
         registerCard(uid); 
         
         // Tampilkan hasil register selama 2 detik
@@ -189,9 +199,8 @@ void loop() {
 
     // --- Normal Mode ---
     
-    // 1. Ambil Timestamp (Tanpa Validasi)
+    // 1. Ambil Timestamp (Tanpa Validasi - Backend handle tanggal 2000/1970)
     String timestamp = getTimestamp(); 
-    // Walaupun isinya "2000-01-01...", tetap lanjut. Backend yang akan handle.
 
     // 2. Cek Cooldown Kartu
     bool cooldown = false;
