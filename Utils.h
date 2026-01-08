@@ -3,24 +3,25 @@
 
 #include "Globals.h"
 
+// --- LOGIKA BUZZER (TETAP SAMA) ---
 void handleBuzzerLoop() {
     unsigned long now = millis();
     if (buzzerState == 0) return;
 
-    // Beep Pendek (Normal)
-    if (buzzerState == 1) {
+    if (buzzerState == 1)
+    { // Beep Pendek
         if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 1;
         } else if (buzzerStep == 1 && now - buzzerTimer > 100) {
             digitalWrite(BUZZER_PIN, LOW);
-            buzzerState = 0; // Selesai
+            buzzerState = 0;
             buzzerStep = 0;
         }
     }
-    // Beep Sukses (2x pendek cepat)
-    else if (buzzerState == 2) {
+    else if (buzzerState == 2)
+    { // Beep Sukses
         if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
@@ -39,13 +40,15 @@ void handleBuzzerLoop() {
             buzzerStep = 0;
         }
     }
-    // Beep Gagal (Panjang)
-    else if (buzzerState == 3) {
+    else if (buzzerState == 3)
+    { // Beep Gagal
         if (buzzerStep == 0) {
             digitalWrite(BUZZER_PIN, HIGH);
             buzzerTimer = now;
             buzzerStep = 1;
-        } else if (buzzerStep == 1 && now - buzzerTimer > 800) { // 800ms
+        }
+        else if (buzzerStep == 1 && now - buzzerTimer > 800)
+        {
             digitalWrite(BUZZER_PIN, LOW);
             buzzerState = 0;
             buzzerStep = 0;
@@ -53,17 +56,23 @@ void handleBuzzerLoop() {
     }
 }
 
-// Fungsi Pemicu (Trigger)
-void bunyiBuzzer() {
-    buzzerState = 1; buzzerStep = 0;
+void bunyiBuzzer()
+{
+    buzzerState = 1;
+    buzzerStep = 0;
 }
-void bunyiBuzzerSukses() {
-    buzzerState = 2; buzzerStep = 0;
+void bunyiBuzzerSukses()
+{
+    buzzerState = 2;
+    buzzerStep = 0;
 }
-void bunyiBuzzerGagal() {
-    buzzerState = 3; buzzerStep = 0;
+void bunyiBuzzerGagal()
+{
+    buzzerState = 3;
+    buzzerStep = 0;
 }
-// ------------------------------------
+
+// --- FUNGSI UTILS LAINNYA ---
 
 String readUID() {
     String uid = "";
@@ -80,15 +89,24 @@ String readUID() {
     return formattedUID;
 }
 
+// --- PERBAIKAN DI SINI ---
 String getTimestamp() {
     time_t now = time(nullptr);
-    
-    // Kirim waktu apa adanya (sesuai request)
+
+    // 1000000000 adalah timestamp kira-kira tahun 2001.
+    // Jika 'now' di bawah ini, berarti NTP belum sync (masih 1970).
+    // Maka kirim string kosong agar Backend menggunakan NOW().
+    if (now < 1000000000)
+    {
+        return "";
+    }
+
     struct tm* timeinfo = localtime(&now);
     char timestamp[25];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", timeinfo);
     return String(timestamp);
 }
+// -------------------------
 
 void cleanupMemory() {
     if (tapHistory.size() > maxCooldownList) {
@@ -109,7 +127,6 @@ void cleanupMemory() {
     }
 }
 
-// Helper untuk set UI sementara
 void setTemporaryMessage(String l1, String l2, int duration) {
     showLcd(l1, l2);
     uiOverride = true;
