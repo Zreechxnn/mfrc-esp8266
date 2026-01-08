@@ -6,22 +6,26 @@
 #include <ArduinoJson.h>
 #include <time.h>
 
-// Include headers - PERHATIKAN URUTANNYA
+// URUTAN INCLUDE SANGAT PENTING
 #include "Settings.h"
 #include "LCD.h"
 #include "Globals.h"
-#include "Utils.h"
+#include "Utils.h"     
 #include "Network.h"
 #include "API.h"
 #include "WebHandler.h"
 
-// Definisi objek global
+// =========================================
+// DEFINISI OBJEK GLOBAL
+// =========================================
 WiFiManager wm;
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 ESP8266WebServer server(80);
 LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLS, LCD_ROWS);
 
-// Definisi variabel global
+// =========================================
+// DEFINISI VARIABEL GLOBAL
+// =========================================
 unsigned long lastWifiCheck = 0;
 bool isConnected = false;
 bool timeConfigured = false;
@@ -48,129 +52,164 @@ String apiNamaKelas = "-";
 std::list<OfflineData*> offlineQueue;
 std::list<CardHistory*> tapHistory;
 
+// Variabel Non-Blocking UI (Didefinisikan di sini agar memori teralokasi)
+unsigned long uiTimer = 0;
+bool uiOverride = false;
+
+// =========================================
+// SETUP
+// =========================================
 void setup() {
-    // Initialize hardware
+    // 1. Init Hardware
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     Serial.begin(115200);
 
-    // Initialize LCD
+    // 2. Init LCD
     initLCD();
     showLcd("System Booting", "Harap Tunggu...");
 
-    // Initialize RFID
+    // 3. Init RFID
     SPI.begin();
     mfrc522.PCD_Init();
 
-    // Initialize WiFi
+    // 4. Init WiFi
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
 
-    // Try to connect to saved network
     showLcd("Connecting WiFi", "Please wait...");
-
-    WiFiManager wm;
-    wm.setTimeout(180);
-
+    
+    // Set timeout agar alat tidak hang jika WiFi mati saat booting
+    wm.setTimeout(180); 
+    
     if (!wm.autoConnect(ap_ssid, ap_password)) {
         showLcd("WiFi Failed", "Restarting...");
-        delay(2000);
+        delay(2000); // Delay di setup aman karena loop belum jalan
         ESP.restart();
     }
 
-    // Initialize mDNS
+    // 5. Init Network Services
     MDNS.begin(mDNS_hostname);
 
-    // Initialize web server
+    // 6. Init Web Server Routes
     server.on("/", handleRoot);
     server.on("/status", handleStatusJSON);
     server.on("/resetwifi", handleResetWiFi);
     server.begin();
 
+    // 7. Selesai
     showLcd("READY", "Tap Kartu Anda");
     bunyiBuzzerSukses();
-
-    // Initial memory cleanup
+    
     cleanupMemory();
-
-    // Initial status
     resetAttempts = 0;
 }
 
+// =========================================
+// LOOP UTAMA (NON-BLOCKING)
+// =========================================
 void loop() {
+    // 1. Core Handlers (Wajib jalan terus)
     MDNS.update();
-    server.handleClient();
+    server.handleClient(); // Webserver responsif setiap saat
+    handleBuzzerLoop();    // Bunyi beep diproses per milidetik
 
-    // Handle WiFi connection dengan reconnection setiap 15 detik
+    // 2. WiFi Management
     handleWiFiConnection(millis());
 
-    // Handle LCD scrolling
+    // 3. LCD Scroll & UI Reset Logic
     lcdLoop();
+    
+    // Logic: Kembalikan tampilan LCD ke menu utama setelah pesan sementara selesai
+    if (uiOverride && millis() > uiTimer) {
+        uiOverride = false;
+        if (currentMode == MODE_NORMAL) {
+            showLcd("READY", "Tap Kartu Anda");
+        } else {
+            showLcd("MODE ADMIN", "Tap Kartu Baru");
+        }
+    }
 
-    // Process offline queue every 5 seconds if online
+    // 4. Offline Queue Processing (Setiap 5 detik)
     static unsigned long lastQueueProcess = 0;
     if (millis() - lastQueueProcess > 5000) {
         processOfflineQueue();
         lastQueueProcess = millis();
-
-        // Periodic memory cleanup
+        
         cleanupMemory();
-
-        // Reset attempt counter setelah cooldown
+        
+        // Reset counter password wifi jika sudah lewat cooldown
         if (resetAttempts > 0 && (millis() - lastResetAttempt > RESET_COOLDOWN)) {
             resetAttempts = 0;
         }
     }
 
-    // Check for RFID card
+    // 5. RFID Handling
+    // Cek apakah ada kartu baru
     if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
         return;
     }
 
     String uid = readUID();
 
-    // Master Card Logic
+    // --- Master Card Logic ---
     if (uid == MASTER_CARD_UID) {
         if (currentMode == MODE_NORMAL) {
             currentMode = MODE_REGISTER;
             showLcd("MODE ADMIN", "Tap Kartu Baru");
             bunyiBuzzer();
-            delay(1000);
         } else {
             currentMode = MODE_NORMAL;
             showLcd("MODE NORMAL", "Siap Tap");
             bunyiBuzzerSukses();
-            delay(1000);
         }
+        
+        // Tahan pesan mode selama 2 detik sebelum bisa discroll/ditimpa
+        uiOverride = true;
+        uiTimer = millis() + 2000;
+        
         mfrc522.PICC_HaltA();
         return;
     }
 
-    // Register Mode - HANYA 1 TAP lalu kembali normal
+    // --- Register Mode ---
     if (currentMode == MODE_REGISTER) {
-        registerCard(uid);
-        delay(1500); // Tampilkan hasil register
-
-        // Otomatis kembali ke mode normal
-        currentMode = MODE_NORMAL;
-        showLcd("READY", "Tap Kartu Anda");
+        // Fungsi registerCard ada di API.h
+        // Pastikan API.h tidak pakai delay() panjang jika ingin webserver tetap responsif 100%
+        registerCard(uid); 
+        
+        // Tampilkan hasil register selama 2 detik
+        uiOverride = true;
+        uiTimer = millis() + 2000;
+        
         mfrc522.PICC_HaltA();
         return;
     }
 
-    // Normal Mode - Check cooldown dengan pointer
+    // --- Normal Mode ---
+    
+    // 1. Ambil Timestamp (Tanpa Validasi)
+    String timestamp = getTimestamp(); 
+    // Walaupun isinya "2000-01-01...", tetap lanjut. Backend yang akan handle.
+
+    // 2. Cek Cooldown Kartu
     bool cooldown = false;
     for (auto& historyPtr : tapHistory) {
         if (historyPtr->uid == uid && (millis() - historyPtr->lastTapTime < cooldownKartu)) {
             showLcd("TUNGGU...", "Masih Cooldown");
+            
+            // Set pesan error tampil 1.5 detik
+            uiOverride = true;
+            uiTimer = millis() + 1500;
+            
             bunyiBuzzer();
             mfrc522.PICC_HaltA();
             return;
         }
     }
 
-    // Update history dengan pointer
+    // 3. Update History Tap
     bool found = false;
     for (auto& historyPtr : tapHistory) {
         if (historyPtr->uid == uid) {
@@ -179,23 +218,26 @@ void loop() {
             break;
         }
     }
-
     if (!found) {
         if (tapHistory.size() >= maxCooldownList) {
-            // Hapus history tertua
             delete tapHistory.front();
             tapHistory.pop_front();
         }
-
-        CardHistory* newHistory = new CardHistory{uid, millis()};
-        tapHistory.push_back(newHistory);
+        tapHistory.push_back(new CardHistory{uid, millis()});
     }
 
-    // Send data
+    // 4. Kirim Data ke Server / Simpan Offline
     lastUID = uid;
-    lastTime = getTimestamp();
-    sendData(lastUID, lastTime);
+    lastTime = timestamp;
+    
+    // Fungsi sendData ada di API.h (akan otomatis masuk queue jika offline)
+    sendData(lastUID, lastTime); 
+    
+    // 5. Tampilkan status hasil kirim selama 3 detik
+    uiOverride = true;
+    uiTimer = millis() + 3000;
 
+    // 6. Stop Reading
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
 }

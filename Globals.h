@@ -2,7 +2,7 @@
 #define GLOBALS_H
 
 #include "Settings.h"
-#include "LCD.h"  // Tambahkan include untuk LCD
+#include "LCD.h"
 
 // Manager Objects
 extern WiFiManager wm;
@@ -33,6 +33,14 @@ extern String apiStatus;
 extern String apiMessage;
 extern String apiNamaKelas;
 
+// --- TAMBAHAN UNTUK NON-BLOCKING ---
+extern unsigned long uiTimer;     // Timer untuk kembalikan tampilan LCD ke idle
+extern bool uiOverride;           // Status apakah LCD sedang menampilkan pesan sementara
+extern int buzzerState;           // 0=Mati, 1=Beep Pendek, 2=Sukses, 3=Gagal
+extern int buzzerStep;            // Langkah dalam urutan bunyi
+extern unsigned long buzzerTimer; // Timer untuk durasi bunyi
+// ------------------------------------
+
 // Data Structures
 struct OfflineData {
     String uid;
@@ -44,11 +52,9 @@ struct CardHistory {
     unsigned long lastTapTime;
 };
 
-// Menggunakan list untuk efisiensi memory dan operasi push/pop
 extern std::list<OfflineData*> offlineQueue;
 extern std::list<CardHistory*> tapHistory;
 
-// Function Prototypes dari file lain
 void handleWiFiConnection(unsigned long currentMillis);
 void cleanupMemory();
 bool verifyResetPassword(String password);
