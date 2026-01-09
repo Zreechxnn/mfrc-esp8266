@@ -5,9 +5,6 @@
 #include "Utils.h"
 #include "LCD.h"
 
-// Gunakan StaticJsonDocument agar tidak perlu new/delete manual
-// Ukuran disesuaikan dengan kebutuhan payload
-
 bool registerCard(String uid) {
     if (WiFi.status() != WL_CONNECTED) {
         showLcd("Gagal Register", "WiFi Offline");
@@ -17,8 +14,8 @@ bool registerCard(String uid) {
     showLcd("DAFTAR KARTU", uid);
 
     WiFiClientSecure client;
-    client.setInsecure(); // Bypass SSL check untuk HuggingFace
-    client.setTimeout(10000); // Timeout 10 detik
+    client.setInsecure();
+    client.setTimeout(10000);
 
     HTTPClient http;
 
@@ -29,7 +26,6 @@ bool registerCard(String uid) {
 
     http.addHeader("Content-Type", "application/json");
 
-    // OPTIMASI: Gunakan StaticJsonDocument (tanpa pointer/new)
     StaticJsonDocument<128> doc;
     doc["uid"] = uid;
 
@@ -40,7 +36,6 @@ bool registerCard(String uid) {
 
     if (httpCode > 0) {
         String res = http.getString();
-        // Buffer response sedikit lebih besar
         StaticJsonDocument<512> respDoc;
         DeserializationError error = deserializeJson(respDoc, res);
 
@@ -48,10 +43,8 @@ bool registerCard(String uid) {
             bool success = respDoc["success"];
             if (success) {
                 showLcd("REGISTER OK", "Kartu Terdaftar");
-                bunyiBuzzerSukses();
             } else {
                 showLcd("REGISTER GAGAL", "Gagal Simpan");
-                bunyiBuzzerGagal();
             }
         } else {
             showLcd("JSON Error", "Bad Response");
@@ -70,7 +63,6 @@ int performRequest(WiFiClient& client, String uid, String timestamp) {
 
     http.addHeader("Content-Type", "application/json");
 
-    // Request kecil, pakai Static aman
     StaticJsonDocument<256> docReq;
     docReq["uid"] = uid;
     docReq["idRuangan"] = ID_RUANGAN;
@@ -86,9 +78,7 @@ int performRequest(WiFiClient& client, String uid, String timestamp) {
     if (httpCode > 0) {
         String res = http.getString();
 
-        // PERBAIKAN: Gunakan DynamicJsonDocument untuk buffer besar (>512 bytes)
-        // Agar tidak menjebol Stack Memory ESP8266
-        DynamicJsonDocument docResp(1024); 
+        DynamicJsonDocument docResp(1024);
         DeserializationError error = deserializeJson(docResp, res);
 
         if (!error) {
@@ -104,12 +94,10 @@ int performRequest(WiFiClient& client, String uid, String timestamp) {
                 if (l2.length() > 16) l2 = l2.substring(0, 16);
 
                 showLcd(l1, l2);
-                bunyiBuzzerSukses();
             } else {
                 String errorMsg = apiMessage;
                 if (errorMsg.length() > 16) errorMsg = errorMsg.substring(0, 16);
                 showLcd("DITOLAK", errorMsg);
-                bunyiBuzzerGagal();
             }
         } else {
              showLcd("Response Error", "JSON Invalid");
@@ -126,7 +114,6 @@ void sendData(String uid, String timestamp) {
     if (WiFi.status() != WL_CONNECTED) {
         OfflineData* data = new OfflineData{uid, timestamp};
 
-        // Cegah memory leak di antrian offline
         if (offlineQueue.size() >= 50) {
             delete offlineQueue.front();
             offlineQueue.pop_front();
@@ -140,7 +127,6 @@ void sendData(String uid, String timestamp) {
     webStatus = "Mengirim...";
     int code = 0;
 
-    // Deteksi HTTPS vs HTTP
     if (String(serverURL).startsWith("https")) {
         WiFiClientSecure sClient;
         sClient.setInsecure();
@@ -158,7 +144,6 @@ void sendData(String uid, String timestamp) {
 void processOfflineQueue() {
     if (offlineQueue.empty() || WiFi.status() != WL_CONNECTED) return;
 
-    // Ambil data tapi JANGAN pop dulu sebelum sukses kirim
     OfflineData* data = offlineQueue.front();
 
     WiFiClientSecure client;
@@ -177,7 +162,6 @@ void processOfflineQueue() {
         serializeJson(doc, payload);
 
         if (http.POST(payload) > 0) {
-            // Sukses kirim, baru hapus dari memori
             delete data;
             offlineQueue.pop_front();
             showLcd("Sync Success", "Sisa: " + String(offlineQueue.size()));

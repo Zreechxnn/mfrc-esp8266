@@ -3,77 +3,6 @@
 
 #include "Globals.h"
 
-// --- LOGIKA BUZZER (TETAP SAMA) ---
-void handleBuzzerLoop() {
-    unsigned long now = millis();
-    if (buzzerState == 0) return;
-
-    if (buzzerState == 1)
-    { // Beep Pendek
-        if (buzzerStep == 0) {
-            digitalWrite(BUZZER_PIN, HIGH);
-            buzzerTimer = now;
-            buzzerStep = 1;
-        } else if (buzzerStep == 1 && now - buzzerTimer > 100) {
-            digitalWrite(BUZZER_PIN, LOW);
-            buzzerState = 0;
-            buzzerStep = 0;
-        }
-    }
-    else if (buzzerState == 2)
-    { // Beep Sukses
-        if (buzzerStep == 0) {
-            digitalWrite(BUZZER_PIN, HIGH);
-            buzzerTimer = now;
-            buzzerStep = 1;
-        } else if (buzzerStep == 1 && now - buzzerTimer > 80) {
-            digitalWrite(BUZZER_PIN, LOW);
-            buzzerTimer = now;
-            buzzerStep = 2;
-        } else if (buzzerStep == 2 && now - buzzerTimer > 50) {
-            digitalWrite(BUZZER_PIN, HIGH);
-            buzzerTimer = now;
-            buzzerStep = 3;
-        } else if (buzzerStep == 3 && now - buzzerTimer > 80) {
-            digitalWrite(BUZZER_PIN, LOW);
-            buzzerState = 0;
-            buzzerStep = 0;
-        }
-    }
-    else if (buzzerState == 3)
-    { // Beep Gagal
-        if (buzzerStep == 0) {
-            digitalWrite(BUZZER_PIN, HIGH);
-            buzzerTimer = now;
-            buzzerStep = 1;
-        }
-        else if (buzzerStep == 1 && now - buzzerTimer > 800)
-        {
-            digitalWrite(BUZZER_PIN, LOW);
-            buzzerState = 0;
-            buzzerStep = 0;
-        }
-    }
-}
-
-void bunyiBuzzer()
-{
-    buzzerState = 1;
-    buzzerStep = 0;
-}
-void bunyiBuzzerSukses()
-{
-    buzzerState = 2;
-    buzzerStep = 0;
-}
-void bunyiBuzzerGagal()
-{
-    buzzerState = 3;
-    buzzerStep = 0;
-}
-
-// --- FUNGSI UTILS LAINNYA ---
-
 String readUID() {
     String uid = "";
     for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -89,15 +18,11 @@ String readUID() {
     return formattedUID;
 }
 
-// --- PERBAIKAN DI SINI ---
 String getTimestamp() {
     time_t now = time(nullptr);
 
-    // 1000000000 adalah timestamp kira-kira tahun 2001.
-    // Jika 'now' di bawah ini, berarti NTP belum sync (masih 1970).
-    // Maka kirim string kosong agar Backend menggunakan NOW().
-    if (now < 1000000000)
-    {
+    // Jika belum sync NTP (tahun < 2001), return kosong biar backend pakai NOW()
+    if (now < 1000000000) {
         return "";
     }
 
@@ -106,7 +31,6 @@ String getTimestamp() {
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", timeinfo);
     return String(timestamp);
 }
-// -------------------------
 
 void cleanupMemory() {
     if (tapHistory.size() > maxCooldownList) {
