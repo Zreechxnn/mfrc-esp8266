@@ -5,7 +5,7 @@
 #include <SPI.h>
 #include <ArduinoJson.h>
 #include <time.h>
-
+#include <vector>
 #include "Settings.h"
 #include "LCD.h"
 #include "Globals.h"
@@ -14,17 +14,11 @@
 #include "API.h"
 #include "WebHandler.h"
 
-// =========================================
-//OBJEK GLOBAL
-// =========================================
 WiFiManager wm;
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 ESP8266WebServer server(80);
 LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLS, LCD_ROWS);
 
-// =========================================
-// VARIABEL GLOBAL
-// =========================================
 unsigned long lastWifiCheck = 0;
 bool isConnected = false;
 bool timeConfigured = false;
@@ -35,23 +29,24 @@ bool reconnectInProgress = false;
 int resetAttempts = 0;
 unsigned long lastResetAttempt = 0;
 
-// Current Mode
 int currentMode = MODE_NORMAL;
 
-String webStatus = "Sistem Siap.";
+// Variabel webStatus dihapus
 String lastUID = "-";
 String lastTime = "-";
 String apiStatus = "-";
 String apiMessage = "-";
 String apiNamaKelas = "-";
 
-std::list<OfflineData*> offlineQueue;
-std::list<CardHistory*> tapHistory;
+std::vector<OfflineData> offlineQueue;
+std::vector<CardHistory> tapHistory;
 
 unsigned long uiTimer = 0;
 bool uiOverride = false;
 
 void setup() {
+    offlineQueue.reserve(maxOfflineQueue);
+    tapHistory.reserve(maxCooldownList);
 
     initLCD();
     showLcd("System Booting", "Harap Tunggu...");
@@ -75,20 +70,21 @@ void setup() {
 
     MDNS.begin(mDNS_hostname);
 
-    server.on("/", handleRoot);
-    server.on("/status", handleStatusJSON);
-    server.on("/resetwifi", handleResetWiFi);
+    // Setup Web Server Minimalis
+    server.on("/", HTTP_GET, handleRoot);     // Tampilkan form reset
+    server.on("/resetwifi", HTTP_POST, handleResetWiFi); // Proses reset
+    // Endpoint /status dihapus
+    
     server.begin();
 
     showLcd("READY", "Tap Kartu Anda");
 
-    cleanupMemory();
     resetAttempts = 0;
 }
 
 void loop() {
     MDNS.update();
-    server.handleClient(); // Webserver handle request
+    server.handleClient();
 
     handleWiFiConnection(millis());
 
@@ -121,7 +117,6 @@ void loop() {
 
     String uid = readUID();
 
-    // --- Master Card Logic ---
     if (isMasterCard(uid)) {
         if (currentMode == MODE_NORMAL) {
             currentMode = MODE_REGISTER;
@@ -131,7 +126,6 @@ void loop() {
             showLcd("MODE NORMAL", "Siap Tap");
         }
 
-        // Tahan pesan mode selama 2 detik
         uiOverride = true;
         uiTimer = millis() + 2000;
 
@@ -139,13 +133,10 @@ void loop() {
         return;
     }
 
-    // --- Register Mode ---
     if (currentMode == MODE_REGISTER) {
         registerCard(uid);
-
         uiOverride = true;
         uiTimer = millis() + 2000;
-
         mfrc522.PICC_HaltA();
         return;
     }
@@ -153,32 +144,29 @@ void loop() {
     String timestamp = getTimestamp();
 
     bool cooldown = false;
-    for (auto& historyPtr : tapHistory) {
-        if (historyPtr->uid == uid && (millis() - historyPtr->lastTapTime < cooldownKartu)) {
+    for (const auto& history : tapHistory) {
+        if (history.uid == uid && (millis() - history.lastTapTime < cooldownKartu)) {
             showLcd("TUNGGU...", "Masih Cooldown");
-
             uiOverride = true;
             uiTimer = millis() + 1500;
-
             mfrc522.PICC_HaltA();
             return;
         }
     }
 
     bool found = false;
-    for (auto& historyPtr : tapHistory) {
-        if (historyPtr->uid == uid) {
-            historyPtr->lastTapTime = millis();
+    for (auto& history : tapHistory) {
+        if (history.uid == uid) {
+            history.lastTapTime = millis();
             found = true;
             break;
         }
     }
     if (!found) {
         if (tapHistory.size() >= maxCooldownList) {
-            delete tapHistory.front();
-            tapHistory.pop_front();
+            tapHistory.erase(tapHistory.begin());
         }
-        tapHistory.push_back(new CardHistory{uid, millis()});
+        tapHistory.push_back({uid, millis()});
     }
 
     lastUID = uid;
@@ -187,7 +175,7 @@ void loop() {
     sendData(lastUID, lastTime);
 
     uiOverride = true;
-    uiTimer = millis() + 3000;
+    uiTimer = millis() + 30000;
 
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();

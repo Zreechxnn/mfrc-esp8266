@@ -1,22 +1,18 @@
 #include "LCD.h"
-#include "Settings.h"
+#include <Arduino.h>  // <--- TAMBAHAN PENTING: Agar D1 dan D2 dikenali
 
-// Definisi konstanta scroll (hanya di sini)
-const int SCROLL_SPEED = 400; // ms per karakter
-const int SCROLL_PAUSE = 2000; // ms jeda sebelum scroll ulang
+const int SCROLL_DELAY = 350;
+const int PAUSE_DELAY = 2000;
+const int GAP_SPACE = 4;
 
-// Definisi variabel scrolling
-String lcdLine1 = "";
-String lcdLine2 = "";
-int scrollIdx1 = 0;
-int scrollIdx2 = 0;
-unsigned long lastLcdUpdate = 0;
-unsigned long scrollStartTime1 = 0;
-unsigned long scrollStartTime2 = 0;
-bool scrollActive1 = false;
-bool scrollActive2 = false;
+String line1, line2;
 
-// Inisialisasi LCD
+int idx1 = 0, idx2 = 0;
+unsigned long nextTime1 = 0, nextTime2 = 0;
+bool scroll1 = false, scroll2 = false;
+
+char lineBuffer[17];
+
 void initLCD() {
     Wire.begin(D2, D1);
     lcd.init();
@@ -24,126 +20,72 @@ void initLCD() {
     lcd.clear();
 }
 
-// Fungsi untuk menampilkan teks di LCD dengan format
-void showLcd(String l1, String l2, bool forceUpdate) {
-    lcdLine1 = l1;
-    lcdLine2 = l2;
+void printLine(int row, const String& text, int startIndex) {
+    int len = text.length();
+    int totalLen = len + GAP_SPACE;
+    for (int i = 0; i < 16; i++) {
+        int ptr = (startIndex + i) % totalLen;
 
-    scrollIdx1 = 0;
-    scrollIdx2 = 0;
-    scrollActive1 = (l1.length() > LCD_COLS);
-    scrollActive2 = (l2.length() > LCD_COLS);
-
-    if (scrollActive1) {
-        scrollStartTime1 = millis() + SCROLL_PAUSE;
+        if (ptr < len) {
+            lineBuffer[i] = text[ptr];
+        } else {
+            lineBuffer[i] = ' ';
+        }
     }
-    if (scrollActive2) {
-        scrollStartTime2 = millis() + SCROLL_PAUSE;
-    }
+    lineBuffer[16] = '\0';
 
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(l1.length() > LCD_COLS ? l1.substring(0, LCD_COLS) : l1);
-    lcd.setCursor(0, 1);
-    lcd.print(l2.length() > LCD_COLS ? l2.substring(0, LCD_COLS) : l2);
-
-    lastLcdUpdate = millis();
-}
-
-// Fungsi untuk menampilkan teks terpusat
-void showLcdCentered(String text, int row) {
     lcd.setCursor(0, row);
-    lcd.print("                "); // Clear line
-    int pos = (LCD_COLS - text.length()) / 2;
-    lcd.setCursor(max(0, pos), row);
-    lcd.print(text);
+    lcd.print(lineBuffer);
 }
 
-// Fungsi khusus untuk menampilkan status dengan nama kelas dari API
-void showLcdWithClass(String status, String className) {
-    String line1 = status;
-    String line2 = className;
-    
-    // Jika kelas terlalu panjang, potong atau format
-    if (className.length() > LCD_COLS) {
-        line2 = className.substring(0, LCD_COLS);
-    }
-    
-    showLcd(line1, line2);
-}
+void showLcd(const String& l1, const String& l2) {
+    if (line1 == l1 && line2 == l2) return;
 
-// Fungsi untuk mendapatkan teks scroll
-String getScrollText(String text, int &idx, unsigned long &scrollStart, bool &active) {
-    if (!active) return text;
+    line1 = l1;
+    line2 = l2;
 
-    unsigned long currentMillis = millis();
-    if (currentMillis < scrollStart) {
-        return text.substring(0, LCD_COLS);
-    }
+    idx1 = 0;
+    idx2 = 0;
+    scroll1 = (line1.length() > 16);
+    scroll2 = (line2.length() > 16);
+    nextTime1 = millis() + PAUSE_DELAY;
+    nextTime2 = millis() + PAUSE_DELAY;
 
-    int textLength = text.length();
-    if (textLength <= LCD_COLS) {
-        active = false;
-        return text;
-    }
-
-    String displayText = text + "    ";
-    int displayLength = displayText.length();
-
-    if (idx >= displayLength) {
-        idx = 0;
-        scrollStart = currentMillis + SCROLL_PAUSE;
-        return text.substring(0, LCD_COLS);
-    }
-
-    String result = displayText.substring(idx, min(idx + LCD_COLS, displayLength));
-    if (result.length() < LCD_COLS) {
-        result += displayText.substring(0, LCD_COLS - result.length());
-    }
-
-    return result;
-}
-
-// Loop untuk menangani scrolling LCD
-void lcdLoop() {
-    unsigned long currentMillis = millis();
-
-    if (currentMillis - lastLcdUpdate > SCROLL_SPEED) {
-        lastLcdUpdate = currentMillis;
-
-        bool updateNeeded = false;
-
-        if (scrollActive1) {
-            String line1 = getScrollText(lcdLine1, scrollIdx1, scrollStartTime1, scrollActive1);
-            lcd.setCursor(0, 0);
-            lcd.print(line1);
-            if (scrollActive1) {
-                scrollIdx1++;
-                updateNeeded = true;
-            }
-        }
-
-        if (scrollActive2) {
-            String line2 = getScrollText(lcdLine2, scrollIdx2, scrollStartTime2, scrollActive2);
-            lcd.setCursor(0, 1);
-            lcd.print(line2);
-            if (scrollActive2) {
-                scrollIdx2++;
-                updateNeeded = true;
-            }
-        }
-
-        if (updateNeeded) {
-            lastLcdUpdate = currentMillis;
-        }
-    }
-}
-
-// Fungsi untuk membersihkan LCD
-void clearLCD() {
     lcd.clear();
-    lcdLine1 = "";
-    lcdLine2 = "";
-    scrollActive1 = false;
-    scrollActive2 = false;
+
+    if (scroll1) printLine(0, line1, 0);
+    else { lcd.setCursor(0, 0); lcd.print(line1); }
+
+    if (scroll2) printLine(1, line2, 0);
+    else { lcd.setCursor(0, 1); lcd.print(line2); }
+}
+
+void updateScroll(int row, const String& text, int& idx, unsigned long& timer, bool active) {
+    if (!active) return;
+    if (millis() < timer) return;
+
+    idx++;
+    int totalLen = text.length() + GAP_SPACE;
+
+    if (idx >= totalLen) {
+        idx = 0;
+        timer = millis() + PAUSE_DELAY;
+    } else {
+        timer = millis() + SCROLL_DELAY;
+    }
+
+    printLine(row, text, idx);
+}
+
+void lcdLoop() {
+    updateScroll(0, line1, idx1, nextTime1, scroll1);
+    updateScroll(1, line2, idx2, nextTime2, scroll2);
+}
+
+void clearLCD() {
+    line1 = "";
+    line2 = "";
+    scroll1 = false;
+    scroll2 = false;
+    lcd.clear();
 }

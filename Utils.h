@@ -21,7 +21,6 @@ String readUID() {
 String getTimestamp() {
     time_t now = time(nullptr);
 
-    // Jika belum sync NTP (tahun < 2001), return kosong biar backend pakai NOW()
     if (now < 1000000000) {
         return "";
     }
@@ -37,7 +36,6 @@ void cleanupMemory() {
         auto it = tapHistory.begin();
         std::advance(it, maxCooldownList);
         while (it != tapHistory.end()) {
-            delete *it;
             it = tapHistory.erase(it);
         }
     }
@@ -45,7 +43,6 @@ void cleanupMemory() {
         auto it = offlineQueue.begin();
         std::advance(it, 50);
         while (it != offlineQueue.end()) {
-            delete *it;
             it = offlineQueue.erase(it);
         }
     }

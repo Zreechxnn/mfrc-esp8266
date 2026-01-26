@@ -21,15 +21,15 @@ extern unsigned long lastResetAttempt;
 
 extern int currentMode;
 
-extern String webStatus;
+// Variabel webStatus dihapus karena fitur dashboard ditiadakan.
 extern String lastUID;
 extern String lastTime;
 extern String apiStatus;
 extern String apiMessage;
 extern String apiNamaKelas;
 
-extern unsigned long uiTimer; 
-extern bool uiOverride;  
+extern unsigned long uiTimer;
+extern bool uiOverride;
 
 struct OfflineData {
     String uid;
@@ -41,11 +41,9 @@ struct CardHistory {
     unsigned long lastTapTime;
 };
 
-extern std::list<OfflineData*> offlineQueue;
-extern std::list<CardHistory*> tapHistory;
+extern std::vector<OfflineData> offlineQueue;
+extern std::vector<CardHistory> tapHistory;
 
-void handleWiFiConnection(unsigned long currentMillis);
 void cleanupMemory();
-bool verifyResetPassword(String password);
 
 #endif

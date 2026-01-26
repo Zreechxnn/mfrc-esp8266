@@ -69,7 +69,6 @@ void handleWiFiConnection(unsigned long currentMillis) {
             reconnectInProgress = false;
 
             showLcd("WiFi Connected", WiFi.localIP().toString());
-            // Buzzer sukses dihapus
         }
 
         if (!timeConfigured) {

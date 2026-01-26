@@ -5,7 +5,29 @@
 #include "Utils.h"
 #include "LCD.h"
 
-bool registerCard(String uid) {
+void parseResponse(String& jsonResponse) {
+    StaticJsonDocument<512> docResp;
+    DeserializationError error = deserializeJson(docResp, jsonResponse);
+
+    if (!error) {
+        apiStatus = docResp["data"]["status"] | "-";
+        apiMessage = docResp["data"]["message"] | "-";
+        apiNamaKelas = docResp["data"]["namaKelas"] | "-";
+
+        if (apiStatus.indexOf("SUKSES") >= 0) {
+            String l1 = apiMessage;
+            String l2 = apiNamaKelas;
+            showLcd(l1, l2);
+        } else {
+            String errorMsg = apiMessage;
+            showLcd("DITOLAK", errorMsg);
+        }
+    } else {
+         showLcd("Response Error", "JSON Invalid");
+    }
+}
+
+bool registerCard(const String& uid) {
     if (WiFi.status() != WL_CONNECTED) {
         showLcd("Gagal Register", "WiFi Offline");
         return false;
@@ -26,7 +48,7 @@ bool registerCard(String uid) {
 
     http.addHeader("Content-Type", "application/json");
 
-    StaticJsonDocument<128> doc;
+    StaticJsonDocument<96> doc;
     doc["uid"] = uid;
 
     String json;
@@ -36,7 +58,7 @@ bool registerCard(String uid) {
 
     if (httpCode > 0) {
         String res = http.getString();
-        StaticJsonDocument<512> respDoc;
+        StaticJsonDocument<192> respDoc;
         DeserializationError error = deserializeJson(respDoc, res);
 
         if (!error) {
@@ -57,13 +79,13 @@ bool registerCard(String uid) {
     return (httpCode > 0);
 }
 
-int performRequest(WiFiClient& client, String uid, String timestamp) {
+int performRequest(WiFiClient& client, const String& uid, const String& timestamp) {
     HTTPClient http;
     if (!http.begin(client, serverURL)) return -1;
 
     http.addHeader("Content-Type", "application/json");
 
-    StaticJsonDocument<256> docReq;
+    StaticJsonDocument<192> docReq;
     docReq["uid"] = uid;
     docReq["idRuangan"] = ID_RUANGAN;
     docReq["timestamp"] = timestamp;
@@ -77,31 +99,7 @@ int performRequest(WiFiClient& client, String uid, String timestamp) {
 
     if (httpCode > 0) {
         String res = http.getString();
-
-        DynamicJsonDocument docResp(1024);
-        DeserializationError error = deserializeJson(docResp, res);
-
-        if (!error) {
-            apiStatus = docResp["data"]["status"] | "-";
-            apiMessage = docResp["data"]["message"] | "-";
-            apiNamaKelas = docResp["data"]["namaKelas"] | "-";
-
-            if (apiStatus.indexOf("SUKSES") >= 0) {
-                String l1 = apiMessage;
-                if (l1.length() > 16) l1 = l1.substring(0, 16);
-
-                String l2 = apiNamaKelas;
-                if (l2.length() > 16) l2 = l2.substring(0, 16);
-
-                showLcd(l1, l2);
-            } else {
-                String errorMsg = apiMessage;
-                if (errorMsg.length() > 16) errorMsg = errorMsg.substring(0, 16);
-                showLcd("DITOLAK", errorMsg);
-            }
-        } else {
-             showLcd("Response Error", "JSON Invalid");
-        }
+        parseResponse(res);
     } else {
         showLcd("HTTP Error", "Code: " + String(httpCode));
     }
@@ -110,21 +108,18 @@ int performRequest(WiFiClient& client, String uid, String timestamp) {
     return httpCode;
 }
 
-void sendData(String uid, String timestamp) {
+void sendData(const String& uid, const String& timestamp) {
+    // Logika Offline Mode
     if (WiFi.status() != WL_CONNECTED) {
-        OfflineData* data = new OfflineData{uid, timestamp};
-
-        if (offlineQueue.size() >= 50) {
-            delete offlineQueue.front();
-            offlineQueue.pop_front();
+        if (offlineQueue.size() >= maxOfflineQueue) {
+            offlineQueue.erase(offlineQueue.begin());
         }
 
-        offlineQueue.push_back(data);
+        offlineQueue.push_back({uid, timestamp});
         showLcd("Data Disimpan", "Mode Offline");
         return;
     }
 
-    webStatus = "Mengirim...";
     int code = 0;
 
     if (String(serverURL).startsWith("https")) {
@@ -137,14 +132,12 @@ void sendData(String uid, String timestamp) {
         nClient.setTimeout(10000);
         code = performRequest(nClient, uid, timestamp);
     }
-
-    webStatus = (code > 0) ? "Sukses: " + String(code) : "Err: " + String(code);
 }
 
 void processOfflineQueue() {
     if (offlineQueue.empty() || WiFi.status() != WL_CONNECTED) return;
 
-    OfflineData* data = offlineQueue.front();
+    const OfflineData& data = offlineQueue.front();
 
     WiFiClientSecure client;
     client.setInsecure();
@@ -153,17 +146,16 @@ void processOfflineQueue() {
     if (http.begin(client, serverURL)) {
         http.addHeader("Content-Type", "application/json");
 
-        StaticJsonDocument<256> doc;
-        doc["uid"] = data->uid;
+        StaticJsonDocument<192> doc;
+        doc["uid"] = data.uid;
         doc["idRuangan"] = ID_RUANGAN;
-        doc["timestamp"] = data->timestamp;
+        doc["timestamp"] = data.timestamp;
 
         String payload;
         serializeJson(doc, payload);
 
         if (http.POST(payload) > 0) {
-            delete data;
-            offlineQueue.pop_front();
+            offlineQueue.erase(offlineQueue.begin());
             showLcd("Sync Success", "Sisa: " + String(offlineQueue.size()));
         }
         http.end();
